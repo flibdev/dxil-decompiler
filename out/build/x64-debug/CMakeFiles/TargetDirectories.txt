@@ -1,0 +1,3 @@
+C:/Github/flib/DXIL_Decompiler/out/build/x64-debug/CMakeFiles/DXIL_Decompiler.dir
+C:/Github/flib/DXIL_Decompiler/out/build/x64-debug/CMakeFiles/edit_cache.dir
+C:/Github/flib/DXIL_Decompiler/out/build/x64-debug/CMakeFiles/rebuild_cache.dir
