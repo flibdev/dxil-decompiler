@@ -1,5 +1,4 @@
-#ifndef DXIL_WINCLUDES
-#define DXIL_WINCLUDES
+#pragma once
 
 #ifndef NOMINMAX
   #define NOMINMAX
@@ -13,5 +12,3 @@
 #include <strsafe.h>
 #include <unknwn.h>
 #include <windows.h>
-
-#endif

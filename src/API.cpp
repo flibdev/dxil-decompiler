@@ -1,20 +1,22 @@
-﻿
-#include "../include/API.h"
-#include "../include/Wincludes.h"
+﻿#include "API.h"
+#include "Wincludes.h"
+#include "DxcDllLoader.hpp"
 
 #include <exception>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
+
 #include <stdio.h>
 
 #include "dxc/dxcapi.h"
-#include "dxc/Support/dxcapi.use.h"
 #include "../deps/dxil-spirv/dxil_spirv_c.h"
 
 
 enum ErrorCodes
 {
-	None = 0,
+	Success = 0,
+	UnhandledException,
 	DXC_LoadDLL,
 	DXC_CreateUtils,
 	DXC_CreateCompiler,
@@ -69,9 +71,13 @@ DXIL_DECOMPILER_API void dxd_get_error_string(dxd_error id, char* buffer, size_t
 		case ErrorCodes::DXC_DisassembleEmpty:
 			WRITE_ERR("DXC: Disassembled output is empty");
 			break;
+
+		case ErrorCodes::UnhandledException:
+			WRITE_ERR("Unhandled exception, yell at flib");
+			break;
 			
-		case ErrorCodes::None:
-			WRITE_ERR("No error.");
+		case ErrorCodes::Success:
+			WRITE_ERR("Success");
 			break;
 		default:
 			WRITE_ERR("Invalid error code: %i", id);
@@ -82,10 +88,10 @@ DXIL_DECOMPILER_API void dxd_get_error_string(dxd_error id, char* buffer, size_t
 #define COM_IID_ARGS(x) __uuidof(*x), reinterpret_cast<void**>(&x)
 
 #define COM_IFT(x, e)                                                          \
-  {                                                                            \
+{                                                                              \
 	HRESULT hr = (x);                                                          \
 	if (hr < 0) { return e; }                                                  \
-  }
+}
 
 
 
@@ -93,15 +99,15 @@ DXD_API dxd_error dxd_export_disassembled(const void* data, size_t size, const c
 {
 	try
 	{
+		// Todo: move this into an init function
+		DxcDllLoader loader;
+		COM_IFT(loader.Initialize("lib/dxcompiler.dll"), ErrorCodes::DXC_LoadDLL);
 		
-		dxc::DxCompilerDllLoader dxcSupport;
-		COM_IFT(dxcSupport.Initialize(), ErrorCodes::DXC_LoadDLL);
-
 		CComPtr<IDxcUtils> utils;
-		COM_IFT(dxcSupport.CreateInstance(CLSID_DxcUtils, &utils), ErrorCodes::DXC_CreateUtils);
+		COM_IFT(loader.CreateInstance(CLSID_DxcUtils, &utils), ErrorCodes::DXC_CreateUtils);
 
 		CComPtr<IDxcCompiler3> compiler;
-		COM_IFT(dxcSupport.CreateInstance(CLSID_DxcCompiler, &compiler), ErrorCodes::DXC_CreateCompiler);
+		COM_IFT(loader.CreateInstance(CLSID_DxcCompiler, &compiler), ErrorCodes::DXC_CreateCompiler);
 
 		CComPtr<IDxcBlobEncoding> compiledBlob;
 		COM_IFT(utils->CreateBlob(data, size, NULL, &compiledBlob), ErrorCodes::DXC_CreateBlob);
@@ -129,15 +135,19 @@ DXD_API dxd_error dxd_export_disassembled(const void* data, size_t size, const c
 			ErrorCodes::DXC_DisassembleEmpty
 		);
 
-		std::ofstream outFile(filename);
+		auto path = std::filesystem::path(filename);
+		// Ensure full path exists
+		std::filesystem::create_directories(path.parent_path());
+
+		std::ofstream outFile(path);
 		outFile.write(outputBlob->GetStringPointer(), outputBlob->GetStringLength());
 		outFile.close();
 
-		return 0;
+		return ErrorCodes::Success;
 	}
 	catch(const std::exception &ex)
 	{
-		return 42;
+		return ErrorCodes::UnhandledException;
 	}
 }
 
