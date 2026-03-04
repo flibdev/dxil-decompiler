@@ -1,0 +1,9 @@
+[submodule "deps/dxil-spirv"]
+	path = deps/dxil-spirv
+	url = https://github.com/HansKristian-Work/dxil-spirv.git
+[submodule "deps/DirectXShaderCompiler"]
+	path = deps/DirectXShaderCompiler
+	url = https://github.com/Microsoft/DirectXShaderCompiler.git
+[submodule "deps/SPIRV-Cross"]
+	path = deps/SPIRV-Cross
+	url = https://github.com/KhronosGroup/SPIRV-Cross.git

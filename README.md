@@ -1,2 +1,2 @@
-# dxil-decompiler
+# DXIL Decompiler
 
