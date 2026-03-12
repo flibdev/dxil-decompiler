@@ -41,25 +41,24 @@ extern "C" {
 #define DXD_API
 #endif
 
-// API Functions return this, 0 means success, and other value is an error
+// API Functions return this, 0 means success, any other value is an error
 typedef uint32_t dxd_error;
 
+#define DXD_MIN_ERROR_BUFFER_SIZE 64
+
 // Gets the error reason for a given id
-// Minimum required buffer size is 40 bytes
 DXD_API void dxd_get_error_string(dxd_error id, char* buffer, size_t size);
 
 
-// Disassemble DXIL bitcode to its LLVM-based IR
-// (Horrible to read but 1:1 with compiled bitcode)
-DXD_API dxd_error dxd_export_disassembled(const void* data, size_t size, const char* filename);
 
-
-/*typedef struct dxd_api* dxd_handle;
-
+typedef struct dxd_api *dxd_handle;
 
 DXD_API dxd_handle dxd_api_create();
-DXD_API dxd_error dxd_api_destroy(dxd_handle instance);
-*/
+DXD_API dxd_error dxd_api_destroy(dxd_handle handle);
+
+DXD_API dxd_error dxd_dxc_initialize(dxd_handle handle, const char* dllPath);
+DXD_API dxd_error dxd_dxc_export_disassembled(dxd_handle handle, const void* data, size_t size, const char* filename);
+
 
 #ifdef __cplusplus
 }

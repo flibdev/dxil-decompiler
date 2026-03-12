@@ -1,158 +1,133 @@
 ﻿#include "API.h"
+#include "Error.hpp"
+#include "DXCompiler.hpp"
 #include "Wincludes.h"
-#include "DxcDllLoader.hpp"
 
-#include <exception>
 #include <iostream>
-#include <fstream>
 #include <filesystem>
+#include <format>
+#include <fstream>
+#include <map>
+#include <memory>
 
 #include <stdio.h>
 
-#include "dxc/dxcapi.h"
-#include "../deps/dxil-spirv/dxil_spirv_c.h"
+#include <dxc/dxcapi.h>
+#include <dxil_spirv_c.h>
 
 
-enum ErrorCodes
-{
-	Success = 0,
-	UnhandledException,
-	DXC_LoadDLL,
-	DXC_CreateUtils,
-	DXC_CreateCompiler,
-	DXC_CreateBlob,
-	DXC_DisassembleError,
-	DXC_DisassembleEmpty
-};
+typedef struct dxd_api_handle {
+	DXCompiler *dxcompiler = nullptr;
 
-#define WRITE_ERR(...) snprintf(buffer, size-1, __VA_ARGS__);
+	bool initialized = false;
 
-DXIL_DECOMPILER_API void dxd_get_error_string(dxd_error id, char* buffer, size_t size) {
-	switch (id)
-	{
-		// dxil-spirv error codes are negative
-		case DXIL_SPV_ERROR_OUT_OF_MEMORY:
-			WRITE_ERR("dxil-spirv: Ran out of memory");
-			break;
-		case DXIL_SPV_ERROR_GENERIC:
-			WRITE_ERR("dxil-spirv: Unhelpful generic error");
-			break;
-		case DXIL_SPV_ERROR_UNSUPPORTED_FEATURE:
-			WRITE_ERR("dxil-spirv: Unsupported feature");
-			break;
-		case DXIL_SPV_ERROR_PARSER:
-			WRITE_ERR("dxil-spirv: Unable to parse blob");
-			break;
-		case DXIL_SPV_ERROR_FAILED_VALIDATION:
-			WRITE_ERR("dxil-spirv: Failed validation");
-			break;
-		case DXIL_SPV_ERROR_INVALID_ARGUMENT:
-			WRITE_ERR("dxil-spirv: Invalid argument");
-			break;
-		case DXIL_SPV_ERROR_NO_DATA:
-			WRITE_ERR("dxil-spirv: No data");
-			break;
-
-		case ErrorCodes::DXC_LoadDLL:
-			WRITE_ERR("DXC: Cannot load dxcompiler.dll");
-			break;
-		case ErrorCodes::DXC_CreateUtils:
-			WRITE_ERR("DXC: Cannot create instance of IDxcUtils");
-			break;
-		case ErrorCodes::DXC_CreateCompiler:
-			WRITE_ERR("DXC: Cannot create instance of IDxcCompiler3");
-			break;
-		case ErrorCodes::DXC_CreateBlob:
-			WRITE_ERR("DXC: Cannot create IDxcBlob from input data");
-			break;
-		case ErrorCodes::DXC_DisassembleError:
-			WRITE_ERR("DXC: Cannot disassemble input blob");
-			break;
-		case ErrorCodes::DXC_DisassembleEmpty:
-			WRITE_ERR("DXC: Disassembled output is empty");
-			break;
-
-		case ErrorCodes::UnhandledException:
-			WRITE_ERR("Unhandled exception, yell at flib");
-			break;
-			
-		case ErrorCodes::Success:
-			WRITE_ERR("Success");
-			break;
-		default:
-			WRITE_ERR("Invalid error code: %i", id);
-			break;
+	dxd_api_handle() {
+		initialized = true;
 	}
-}
-
-#define COM_IID_ARGS(x) __uuidof(*x), reinterpret_cast<void**>(&x)
-
-#define COM_IFT(x, e)                                                          \
-{                                                                              \
-	HRESULT hr = (x);                                                          \
-	if (hr < 0) { return e; }                                                  \
-}
-
-
-
-DXD_API dxd_error dxd_export_disassembled(const void* data, size_t size, const char* filename)
-{
-	try
-	{
-		// Todo: move this into an init function
-		DxcDllLoader loader;
-		COM_IFT(loader.Initialize("lib/dxcompiler.dll"), ErrorCodes::DXC_LoadDLL);
-		
-		CComPtr<IDxcUtils> utils;
-		COM_IFT(loader.CreateInstance(CLSID_DxcUtils, &utils), ErrorCodes::DXC_CreateUtils);
-
-		CComPtr<IDxcCompiler3> compiler;
-		COM_IFT(loader.CreateInstance(CLSID_DxcCompiler, &compiler), ErrorCodes::DXC_CreateCompiler);
-
-		CComPtr<IDxcBlobEncoding> compiledBlob;
-		COM_IFT(utils->CreateBlob(data, size, NULL, &compiledBlob), ErrorCodes::DXC_CreateBlob);
-
-		DxcBuffer compiledBuffer = {
-			compiledBlob->GetBufferPointer(),
-			compiledBlob->GetBufferSize(),
-			0
-		};
-
-		CComPtr<IDxcResult> result;
-		COM_IFT(
-			compiler->Disassemble(&compiledBuffer, COM_IID_ARGS(result)),
-			ErrorCodes::DXC_DisassembleError
-		);
-
-		if (!result->HasOutput(DXC_OUT_KIND::DXC_OUT_DISASSEMBLY)) {
-			return ErrorCodes::DXC_DisassembleEmpty;
+	~dxd_api_handle() {
+		if (dxcompiler != nullptr) {
+			delete dxcompiler;
+			dxcompiler = nullptr;
 		}
+	}
+} dxd_api_handle;
 
-		CComPtr<IDxcBlobUtf8> outputBlob;
-		CComPtr<IDxcBlobWide> outputName;
-		COM_IFT(
-			result->GetOutput(DXC_OUT_KIND::DXC_OUT_DISASSEMBLY, COM_IID_ARGS(outputBlob), &outputName),
-			ErrorCodes::DXC_DisassembleEmpty
-		);
-
+// Helper method to write a char buffer to file while ensuring the full path exists
+void WriteToFile(const char *filename, const char *data, size_t size) {
+	try {
+		// Ensure full path to parent exists
 		auto path = std::filesystem::path(filename);
-		// Ensure full path exists
 		std::filesystem::create_directories(path.parent_path());
 
 		std::ofstream outFile(path);
-		outFile.write(outputBlob->GetStringPointer(), outputBlob->GetStringLength());
+		outFile.write(data, size);
 		outFile.close();
+	}
+	catch (...) {
+		throw ErrorCodes::DXD_CannotWrite;
+	}
+}
+
+
+inline dxd_api_handle* ConvertDXDHandle(dxd_handle handle) {
+	auto instance = reinterpret_cast<dxd_api_handle*>(handle);
+	if (!instance->initialized) {
+		throw ErrorCodes::DXD_InvalidHandle;
+	}
+	return instance;
+}
+
+
+
+DXIL_DECOMPILER_API void dxd_get_error_string(dxd_error id, char* buffer, size_t size) {
+	if (size >= DXD_MIN_ERROR_BUFFER_SIZE) {
+		snprintf(buffer, size, "%s", GetErrorString((ErrorCodes)id).c_str());
+	}
+}
+
+DXD_API dxd_handle dxd_api_create()
+{
+	auto handle = new dxd_api_handle();
+	return reinterpret_cast<dxd_handle>(handle);
+}
+
+
+DXD_API dxd_error dxd_api_destroy(dxd_handle handle)
+{
+	try {
+		auto instance = ConvertDXDHandle(handle);
+
+		delete instance;
+		instance = nullptr;
 
 		return ErrorCodes::Success;
 	}
-	catch(const std::exception &ex)
-	{
+	catch (ErrorCodes &e) {
+		return e;
+	}
+	catch (...) {
+		return ErrorCodes::UnhandledException;
+	}
+}
+
+DXD_API dxd_error dxd_dxc_initialize(dxd_handle handle, const char* dllPath)
+{
+	try {
+		auto instance = ConvertDXDHandle(handle);
+
+		instance->dxcompiler = new DXCompiler(dllPath);
+
+		return ErrorCodes::Success;
+	}
+	catch (ErrorCodes &e) {
+		return e;
+	}
+	catch (...) {
+		return ErrorCodes::UnhandledException;
+	}
+}
+
+DXD_API dxd_error dxd_dxc_export_disassembled(dxd_handle handle, const void* data, size_t size, const char* filename)
+{
+	try {
+		auto instance = ConvertDXDHandle(handle);
+
+		auto result = instance->dxcompiler->Disassemble(data, size);
+
+		WriteToFile(filename, result->GetStringPointer(), result->GetStringLength());
+
+		return ErrorCodes::Success;
+	}
+	catch (ErrorCodes &e) {
+		return e;
+	}
+	catch (...) {
 		return ErrorCodes::UnhandledException;
 	}
 }
 
 
-
+/*
 BOOL WINAPI DllMain(
     HINSTANCE hinstDLL,  // handle to DLL module
     DWORD fdwReason,     // reason for calling function
@@ -180,4 +155,4 @@ BOOL WINAPI DllMain(
     }
     return TRUE;  // Successful DLL_PROCESS_ATTACH.
 }
-
+*/

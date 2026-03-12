@@ -22,7 +22,7 @@ add_requires("DirectXShaderCompiler")
 
 target("DXILDecompiler")
     set_kind("shared")
-    add_files("src/API.cpp")
+    add_files("src/API.cpp", "src/DXCompiler.cpp")
     add_includedirs("include/")
     add_includedirs("deps/dxil-spirv")
     add_includedirs("deps/DirectXShaderCompiler/include/")

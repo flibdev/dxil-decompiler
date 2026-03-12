@@ -12,3 +12,16 @@
 #include <strsafe.h>
 #include <unknwn.h>
 #include <windows.h>
+
+
+// COM Helper macros
+
+// Outputs the common (type uuid, void pointer) args pair
+#define COM_IID_ARGS(x) __uuidof(*x), reinterpret_cast<void**>(&x)
+
+// Do x, if it returns a negative HRESULT, throw e
+#define COM_IFT(x, e)                                                          \
+{                                                                              \
+  HRESULT hr = (x);                                                            \
+  if (hr < 0) { throw e; }                                                     \
+}
