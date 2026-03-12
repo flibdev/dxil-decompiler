@@ -14,7 +14,7 @@
 
 #include <dxc/dxcapi.h>
 #include <dxil_spirv_c.h>
-
+#include <spirv-tools/libspirv.hpp>
 
 typedef struct dxd_api_handle {
 	DXCompiler *dxcompiler = nullptr;
@@ -48,6 +48,10 @@ void WriteToFile(const char *filename, const char *data, size_t size) {
 	}
 }
 
+void WriteStringToFile(const char *filename, std::string str) {
+	WriteToFile(filename, str.data(), str.size());
+}
+
 
 inline dxd_api_handle* ConvertDXDHandle(dxd_handle handle) {
 	auto instance = reinterpret_cast<dxd_api_handle*>(handle);
@@ -75,10 +79,8 @@ DXD_API dxd_handle dxd_api_create()
 DXD_API dxd_error dxd_api_destroy(dxd_handle handle)
 {
 	try {
-		auto instance = ConvertDXDHandle(handle);
-
-		delete instance;
-		instance = nullptr;
+		delete handle;
+		handle = nullptr;
 
 		return ErrorCodes::Success;
 	}
@@ -126,6 +128,79 @@ DXD_API dxd_error dxd_dxc_export_disassembled(dxd_handle handle, const void* dat
 	}
 }
 
+#define SPV_IFT(x)                                                             \
+{                                                                              \
+  dxil_spv_result res = (x);                                                   \
+  if (res != DXIL_SPV_SUCCESS) { throw (ErrorCodes)res; }                      \
+}
+
+
+DXD_API dxd_error dxd_spv_export_spirv(dxd_handle handle, const void* data, size_t size, const char* filename)
+{
+	try {
+		auto instance = ConvertDXDHandle(handle);
+
+		dxil_spv_parsed_blob blob;
+		dxil_spv_parsed_blob reflection_blob;
+		dxil_spv_converter converter;
+		dxil_spv_compiled_spirv compiled;
+
+		SPV_IFT(dxil_spv_parse_dxil_blob(data, size, &blob));
+		//SPV_IFT(dxil_spv_parse_reflection_dxil_blob(data, size, &reflection_blob));
+		SPV_IFT(dxil_spv_create_converter(blob, &converter));
+		SPV_IFT(dxil_spv_converter_run(converter));
+		SPV_IFT(dxil_spv_converter_get_compiled_spirv(converter, &compiled));
+
+		std::stringstream stream;
+
+		unsigned heuristic_min_wave_size = 0;
+		unsigned heuristic_max_wave_size = 0;
+		unsigned wave_size_min = 0;
+		unsigned wave_size_max = 0;
+		unsigned wave_size_preferred = 0;
+		dxil_spv_converter_get_compute_wave_size_range(converter, &wave_size_min, &wave_size_max, &wave_size_preferred);
+		dxil_spv_converter_get_compute_heuristic_min_wave_size(converter, &heuristic_min_wave_size);
+		dxil_spv_converter_get_compute_heuristic_max_wave_size(converter, &heuristic_max_wave_size);
+
+		if (wave_size_min) {
+			stream << "// WaveSize(" << wave_size_min;
+			if (wave_size_max || wave_size_preferred) {
+				stream << ","  << (wave_size_max ? wave_size_max : wave_size_min);
+			}
+			if (wave_size_preferred) {
+				stream << "," << wave_size_preferred;
+			}
+			stream << std::endl;
+		}
+		if (heuristic_min_wave_size) {
+			stream << "// HeuristicWaveSizeMin(" << heuristic_min_wave_size << ")" << std::endl;
+		}
+		if (heuristic_max_wave_size) {
+			stream << "// HeuristicWaveSize(" << heuristic_max_wave_size << ")" << std::endl;
+		}
+
+		//stream << convert_to_asm(compiled.data, compiled.size);
+		spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_3);
+		std::string disassemStr;
+		if (tools.Disassemble(
+				static_cast<const uint32_t *>(compiled.data),
+				compiled.size / sizeof(uint32_t),
+				&disassemStr, 0)) {
+			stream << disassemStr;
+		}
+
+		//WriteToFile(filename, (const char*)compiled.data, compiled.size);
+		WriteStringToFile(filename, stream.str());
+
+		return ErrorCodes::Success;
+	}
+	catch (ErrorCodes &e) {
+		return e;
+	}
+	catch (...) {
+		return ErrorCodes::UnhandledException;
+	}
+}
 
 /*
 BOOL WINAPI DllMain(

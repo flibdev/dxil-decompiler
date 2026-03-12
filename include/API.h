@@ -60,6 +60,8 @@ DXD_API dxd_error dxd_dxc_initialize(dxd_handle handle, const char* dllPath);
 DXD_API dxd_error dxd_dxc_export_disassembled(dxd_handle handle, const void* data, size_t size, const char* filename);
 
 
+DXD_API dxd_error dxd_spv_export_spirv(dxd_handle handle, const void* data, size_t size, const char* filename);
+
 #ifdef __cplusplus
 }
 #endif
